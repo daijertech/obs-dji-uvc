@@ -1,0 +1,38 @@
+name: build-windows
+on:
+  push: { branches: [main] }
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download obs-deps
+        shell: pwsh
+        run: |
+          $url = "https://github.com/obsproject/obs-deps/releases/download/2024-09-12/windows-deps-2024-09-12-x64.zip"
+          Invoke-WebRequest $url -OutFile deps.zip
+          Expand-Archive deps.zip -DestinationPath C:\obs-deps
+
+      - name: Build
+        shell: pwsh
+        run: .\build-windows.ps1 -ObsDeps C:\obs-deps
+
+      - name: Stage
+        shell: pwsh
+        run: .\installer\stage.ps1
+
+      - name: Installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" installer\obs-dji-uvc.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: obs-dji-uvc-windows
+          path: |
+            installer/Output/*.exe
+            build/RelWithDebInfo/obs-dji-uvc.dll
