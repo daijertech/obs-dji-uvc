@@ -13,7 +13,7 @@
 #include <obs-module.h>
 #include <util/platform.h>
 #include <util/threading.h>
-#include <util/circlebuf.h>
+#include <util/deque.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -55,7 +55,7 @@ struct dji_src {
 
 	pthread_mutex_t q_lock;
 	os_sem_t *q_sem;
-	struct circlebuf q;
+	struct deque q;
 	size_t q_count;
 	bool q_dropping;
 
@@ -86,7 +86,7 @@ static void on_au(void *opaque, const uint8_t *au, size_t size, bool key)
 			/* resync: flush queue, start clean at this keyframe */
 			while (s->q_count) {
 				struct au_item old;
-				circlebuf_pop_front(&s->q, &old, sizeof(old));
+				deque_pop_front(&s->q, &old, sizeof(old));
 				bfree(old.data);
 				s->q_count--;
 				os_sem_wait(s->q_sem); /* consume its post */
@@ -98,7 +98,7 @@ static void on_au(void *opaque, const uint8_t *au, size_t size, bool key)
 			return;
 		}
 	}
-	circlebuf_push_back(&s->q, &item, sizeof(item));
+	deque_push_back(&s->q, &item, sizeof(item));
 	s->q_count++;
 	pthread_mutex_unlock(&s->q_lock);
 	os_sem_post(s->q_sem);
@@ -158,7 +158,7 @@ static void *decode_thread_fn(void *opaque)
 			pthread_mutex_unlock(&s->q_lock);
 			continue;
 		}
-		circlebuf_pop_front(&s->q, &item, sizeof(item));
+		deque_pop_front(&s->q, &item, sizeof(item));
 		s->q_count--;
 		pthread_mutex_unlock(&s->q_lock);
 
@@ -191,7 +191,7 @@ static void stop_stream(struct dji_src *s)
 	pthread_mutex_lock(&s->q_lock);
 	while (s->q_count) {
 		struct au_item item;
-		circlebuf_pop_front(&s->q, &item, sizeof(item));
+		deque_pop_front(&s->q, &item, sizeof(item));
 		bfree(item.data);
 		s->q_count--;
 	}
@@ -312,7 +312,7 @@ static void *dji_create(obs_data_t *settings, obs_source_t *source)
 	s->source = source;
 	pthread_mutex_init(&s->q_lock, NULL);
 	os_sem_init(&s->q_sem, 0);
-	circlebuf_init(&s->q);
+	deque_init(&s->q);
 	dji_nal_init(&s->nal, DJI_NAL_H264);
 
 	apply_settings(s, settings);
@@ -325,7 +325,7 @@ static void dji_destroy(void *data)
 	struct dji_src *s = data;
 	stop_stream(s);
 	dji_nal_free(&s->nal);
-	circlebuf_free(&s->q);
+	deque_free(&s->q);
 	os_sem_destroy(s->q_sem);
 	pthread_mutex_destroy(&s->q_lock);
 	bfree(s);

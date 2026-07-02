@@ -12,7 +12,7 @@ jobs:
       - name: Download obs-deps
         shell: pwsh
         run: |
-          $url = "https://github.com/obsproject/obs-deps/releases/download/2024-09-12/windows-deps-2024-09-12-x64.zip"
+          $url = "https://github.com/obsproject/obs-deps/releases/download/2025-08-23/windows-deps-qt6-2025-08-23-x64.zip"
           Invoke-WebRequest $url -OutFile deps.zip
           Expand-Archive deps.zip -DestinationPath C:\obs-deps
 

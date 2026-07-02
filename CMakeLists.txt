@@ -1,69 +1,83 @@
 cmake_minimum_required(VERSION 3.22)
-project(obs-dji-uvc VERSION 1.0.0 LANGUAGES C)
+project(obs-dji-uvc VERSION 1.0.1 LANGUAGES C)
 
 # ---------------------------------------------------------------------------
 # obs-dji-uvc — DJI Osmo Pocket encoded-UVC source for OBS Studio.
-#
-# Build (Windows, recommended via obs-plugintemplate conventions):
-#   cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo ^
-#         -DCMAKE_PREFIX_PATH="C:/obs-deps;C:/obs-studio/build/install"
-#   cmake --build build --config RelWithDebInfo
-#
-# Dependencies:
-#   * libobs (headers + import lib) — from an OBS Studio build or obs-deps
-#   * FFmpeg (avcodec/avutil/swscale) — ships with obs-deps
-#   * libusb-1.0 — fetched below if not found
-#   * libuvc    — fetched below (BELABOX-compatible fork preferred)
+# See README.md.  Dependencies:
+#   * libobs  — via find_package(libobs) or -DLIBOBS_INCLUDE_DIR/-DLIBOBS_LIB
+#   * FFmpeg  — from obs-deps (cmake/FindFFmpeg.cmake)
+#   * libusb  — FetchContent (libusb-cmake, builds clean under MSVC)
+#   * libuvc  — FetchContent, sources vendored directly (its own CMake is
+#               not reliable on Windows CI, so we compile its .c files)
 # ---------------------------------------------------------------------------
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(FetchContent)
 
+# --- libobs ------------------------------------------------------------------
 find_package(libobs QUIET)
 if(NOT libobs_FOUND)
-  # Fall back to manual hints: -DLIBOBS_INCLUDE_DIR / -DLIBOBS_LIB
   if(NOT LIBOBS_INCLUDE_DIR OR NOT LIBOBS_LIB)
     message(FATAL_ERROR
-      "libobs not found. Either install OBS Studio dev package / build "
-      "OBS from source and pass -DCMAKE_PREFIX_PATH, or set "
-      "-DLIBOBS_INCLUDE_DIR and -DLIBOBS_LIB manually.")
+      "libobs not found. Pass -DCMAKE_PREFIX_PATH to an OBS install, or set "
+      "-DLIBOBS_INCLUDE_DIR and -DLIBOBS_LIB.")
   endif()
 endif()
 
+# --- FFmpeg (obs-deps) ---------------------------------------------------------
 find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil swscale)
 
-# --- libusb ----------------------------------------------------------------
-find_library(LIBUSB_LIB NAMES usb-1.0 libusb-1.0)
-find_path(LIBUSB_INCLUDE_DIR libusb-1.0/libusb.h)
-if(NOT LIBUSB_LIB OR NOT LIBUSB_INCLUDE_DIR)
-  message(STATUS "libusb not found — fetching")
-  FetchContent_Declare(libusb
-    GIT_REPOSITORY https://github.com/libusb/libusb-cmake.git
-    GIT_TAG v1.0.27)
-  FetchContent_MakeAvailable(libusb)
-  set(LIBUSB_TARGET usb-1.0)
-else()
-  add_library(vendored_libusb INTERFACE)
-  target_include_directories(vendored_libusb INTERFACE ${LIBUSB_INCLUDE_DIR})
-  target_link_libraries(vendored_libusb INTERFACE ${LIBUSB_LIB})
-  set(LIBUSB_TARGET vendored_libusb)
+# --- libusb --------------------------------------------------------------------
+FetchContent_Declare(libusb
+  GIT_REPOSITORY https://github.com/libusb/libusb-cmake.git
+  GIT_TAG v1.0.27
+  GIT_SHALLOW TRUE)
+set(LIBUSB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LIBUSB_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(LIBUSB_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(libusb)
+
+# --- libuvc (vendored sources, bypass its CMake) --------------------------------
+FetchContent_Declare(libuvc_src
+  GIT_REPOSITORY https://github.com/libuvc/libuvc.git
+  GIT_TAG master
+  GIT_SHALLOW TRUE)
+FetchContent_GetProperties(libuvc_src)
+if(NOT libuvc_src_POPULATED)
+  FetchContent_Populate(libuvc_src)
 endif()
 
-# --- libuvc ------------------------------------------------------------------
-# The UnlimitedIRL/BELABOX lineage fork carries fixes for DJI frame-based
-# H.264 streams; upstream libuvc also works for H264 (UVC_FRAME_FORMAT_H264).
-option(DJI_UVC_USE_BELABOX_LIBUVC "Prefer the BELABOX-lineage libuvc fork" ON)
-if(DJI_UVC_USE_BELABOX_LIBUVC)
-  set(LIBUVC_REPO https://github.com/UnlimitedIRL-Team/libuvc.git)
-else()
-  set(LIBUVC_REPO https://github.com/libuvc/libuvc.git)
-endif()
-set(BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
-set(BUILD_TEST OFF CACHE BOOL "" FORCE)
-set(CMAKE_BUILD_TARGET "Static" CACHE STRING "" FORCE) # libuvc option name
-FetchContent_Declare(libuvc GIT_REPOSITORY ${LIBUVC_REPO} GIT_TAG master)
-FetchContent_MakeAvailable(libuvc)
+# Generate libuvc_config.h (no JPEG — we only consume the H.264 descriptor)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/uvc-config/libuvc/libuvc_config.h" "
+#ifndef LIBUVC_CONFIG_H
+#define LIBUVC_CONFIG_H
+#define LIBUVC_VERSION_MAJOR 0
+#define LIBUVC_VERSION_MINOR 0
+#define LIBUVC_VERSION_PATCH 7
+#define LIBUVC_VERSION_STR \"0.0.7\"
+#define LIBUVC_VERSION_INT ((0 << 16) | (0 << 8) | 7)
+/* #undef LIBUVC_HAS_JPEG */
+#endif
+")
 
-# --- plugin ------------------------------------------------------------------
+add_library(uvc_vendored STATIC
+  ${libuvc_src_SOURCE_DIR}/src/ctrl.c
+  ${libuvc_src_SOURCE_DIR}/src/ctrl-gen.c
+  ${libuvc_src_SOURCE_DIR}/src/device.c
+  ${libuvc_src_SOURCE_DIR}/src/diag.c
+  ${libuvc_src_SOURCE_DIR}/src/frame.c
+  ${libuvc_src_SOURCE_DIR}/src/init.c
+  ${libuvc_src_SOURCE_DIR}/src/misc.c
+  ${libuvc_src_SOURCE_DIR}/src/stream.c)
+target_include_directories(uvc_vendored PUBLIC
+  ${libuvc_src_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_BINARY_DIR}/uvc-config)
+target_link_libraries(uvc_vendored PUBLIC usb-1.0)
+if(MSVC)
+  target_compile_definitions(uvc_vendored PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+# --- plugin ----------------------------------------------------------------------
 add_library(obs-dji-uvc MODULE
   src/plugin-main.c
   src/dji-source.c
@@ -75,18 +89,22 @@ target_compile_definitions(obs-dji-uvc PRIVATE DJI_HAVE_OBS)
 
 if(libobs_FOUND)
   target_link_libraries(obs-dji-uvc PRIVATE OBS::libobs)
+  if(TARGET OBS::w32-pthreads)
+    target_link_libraries(obs-dji-uvc PRIVATE OBS::w32-pthreads)
+  endif()
 else()
   target_include_directories(obs-dji-uvc PRIVATE ${LIBOBS_INCLUDE_DIR})
   target_link_libraries(obs-dji-uvc PRIVATE ${LIBOBS_LIB})
+  if(LIBOBS_PTHREADS_LIB)
+    target_link_libraries(obs-dji-uvc PRIVATE ${LIBOBS_PTHREADS_LIB})
+  endif()
+  if(LIBOBS_PTHREADS_INCLUDE_DIR)
+    target_include_directories(obs-dji-uvc PRIVATE ${LIBOBS_PTHREADS_INCLUDE_DIR})
+  endif()
 endif()
 
 target_link_libraries(obs-dji-uvc PRIVATE
-  FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale
-  uvc_static ${LIBUSB_TARGET})
-
-target_include_directories(obs-dji-uvc PRIVATE
-  ${libuvc_SOURCE_DIR}/include
-  ${libuvc_BINARY_DIR}/include)
+  FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale uvc_vendored)
 
 if(WIN32)
   target_compile_definitions(obs-dji-uvc PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -94,7 +112,7 @@ endif()
 
 set_target_properties(obs-dji-uvc PROPERTIES PREFIX "")
 
-# --- host-side unit test (no OBS required) -----------------------------------
+# --- host-side unit test ------------------------------------------------------------
 option(DJI_UVC_BUILD_TESTS "Build NAL assembler unit test" OFF)
 if(DJI_UVC_BUILD_TESTS)
   add_executable(test-nal src/test-nal.c src/dji-nal.c)
@@ -102,7 +120,7 @@ if(DJI_UVC_BUILD_TESTS)
   add_test(NAME nal COMMAND test-nal)
 endif()
 
-# --- install ------------------------------------------------------------------
+# --- install --------------------------------------------------------------------------
 if(WIN32)
   install(TARGETS obs-dji-uvc
           LIBRARY DESTINATION "obs-plugins/64bit"
