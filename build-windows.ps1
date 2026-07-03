@@ -69,6 +69,7 @@ if ($libobsConfig) {
     $pthreadsLib = Get-ChildItem -Path $obsBuild -Recurse -Filter "w32-pthreads.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
     $cmakeArgs += "-DCMAKE_PREFIX_PATH=$($prefixList -join ';')"
     $cmakeArgs += "-DLIBOBS_INCLUDE_DIR=$ObsStudio\libobs"
+    $cmakeArgs += "-DLIBOBS_CONFIG_INCLUDE_DIR=$obsBuild\config"
     $cmakeArgs += "-DLIBOBS_LIB=$($obsLib.FullName)"
     if ($pthreadsLib) {
         $cmakeArgs += "-DLIBOBS_PTHREADS_LIB=$($pthreadsLib.FullName)"
