@@ -3,6 +3,9 @@ on:
   push: { branches: [main] }
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   windows:
     runs-on: windows-2022
@@ -32,6 +35,18 @@ jobs:
         with:
           name: build-log
           path: build-output.log
+
+      - name: Publish log to ci-logs branch
+        if: always()
+        shell: pwsh
+        run: |
+          git config user.name "ci"
+          git config user.email "ci@local"
+          git checkout --orphan ci-logs
+          git reset
+          git add -f build-output.log
+          git commit -m "ci log run $env:GITHUB_RUN_ID"
+          git push -f origin ci-logs
 
       - name: Stage
         shell: pwsh
