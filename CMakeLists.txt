@@ -40,7 +40,7 @@ FetchContent_MakeAvailable(libusb)
 # --- libuvc (vendored sources, bypass its CMake) --------------------------------
 FetchContent_Declare(libuvc_src
   GIT_REPOSITORY https://github.com/libuvc/libuvc.git
-  GIT_TAG master
+  GIT_TAG 047920bcdfb1dac42424c90de5cc77dfc9fba04d
   GIT_SHALLOW TRUE
   SOURCE_SUBDIR cmake-disabled-no-add-subdirectory)
 FetchContent_MakeAvailable(libuvc_src)
@@ -59,6 +59,21 @@ if(NOT _uvc_needs_patch EQUAL -1)
 #endif"
     _uvc_hdr "${_uvc_hdr}")
   file(WRITE "${libuvc_src_SOURCE_DIR}/include/libuvc/libuvc.h" "${_uvc_hdr}")
+endif()
+
+# MSVC lacks clock_gettime/CLOCK_MONOTONIC; use C11 timespec_get instead.
+file(READ "${libuvc_src_SOURCE_DIR}/src/stream.c" _uvc_stream)
+string(FIND "${_uvc_stream}" "timespec_get" _uvc_stream_patched)
+if(_uvc_stream_patched EQUAL -1)
+  string(REPLACE
+"  (void)clock_gettime(CLOCK_MONOTONIC, &strmh->capture_time_finished);"
+"#ifdef _MSC_VER
+  (void)timespec_get(&strmh->capture_time_finished, TIME_UTC);
+#else
+  (void)clock_gettime(CLOCK_MONOTONIC, &strmh->capture_time_finished);
+#endif"
+    _uvc_stream "${_uvc_stream}")
+  file(WRITE "${libuvc_src_SOURCE_DIR}/src/stream.c" "${_uvc_stream}")
 endif()
 
 # Generate libuvc_config.h (no JPEG — we only consume the H.264 descriptor)
