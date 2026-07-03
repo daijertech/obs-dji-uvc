@@ -8,16 +8,11 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
-if (-not (Test-Path $ObsDeps)) {
-    Write-Host "obs-deps not found at $ObsDeps."
-    Write-Host "Get windows-deps-qt6-*-x64.zip from https://github.com/obsproject/obs-deps/releases"
-    exit 1
-}
-# Handle zips that extract into a wrapper directory
-if (-not (Test-Path (Join-Path $ObsDeps "include"))) {
+# Manual obs-deps is optional: obs-studio's configure auto-downloads the real
+# dependency bundle (FFmpeg, simde, ...) into <obs-studio>/.deps.
+if ((Test-Path $ObsDeps) -and -not (Test-Path (Join-Path $ObsDeps "include"))) {
     $inner = Get-ChildItem -Path $ObsDeps -Directory | Where-Object { Test-Path (Join-Path $_.FullName "include") } | Select-Object -First 1
-    if ($inner) { $ObsDeps = $inner.FullName; Write-Host "obs-deps resolved to $ObsDeps" }
-    else { throw "$ObsDeps does not contain include/ — wrong archive layout" }
+    if ($inner) { $ObsDeps = $inner.FullName }
 }
 
 if ($ObsStudio -eq "") {
@@ -50,6 +45,13 @@ cmake --install $obsBuild --config $Config --prefix "$obsBuild\install" 2>$null 
 
 $libobsConfig = Get-ChildItem -Path "$obsBuild\install" -Recurse -Filter "libobsConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 1
 
+# The real FFmpeg/simde live in obs-studio's auto-downloaded deps bundle.
+$depsBundle = Get-ChildItem -Path (Join-Path $ObsStudio ".deps") -Directory -Filter "obs-deps-*" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notmatch "qt6" } | Select-Object -First 1
+if (-not $depsBundle) { throw "obs-deps prebuilt bundle not found under $ObsStudio\.deps" }
+$prefixList = @($depsBundle.FullName)
+if (Test-Path (Join-Path $ObsDeps "include")) { $prefixList += $ObsDeps }
+
 $build = Join-Path $root "build"
 $cmakeArgs = @(
     "-S", $root, "-B", $build,
@@ -58,13 +60,14 @@ $cmakeArgs = @(
 )
 
 if ($libobsConfig) {
-    $cmakeArgs += "-DCMAKE_PREFIX_PATH=$ObsDeps;$obsBuild\install"
+    $prefixList += "$obsBuild\install"
+    $cmakeArgs += "-DCMAKE_PREFIX_PATH=$($prefixList -join ';')"
 } else {
     Write-Host "libobsConfig.cmake not found — using direct paths into the build tree"
     $obsLib = Get-ChildItem -Path $obsBuild -Recurse -Filter "obs.lib" | Select-Object -First 1
     if (-not $obsLib) { throw "obs.lib not found under $obsBuild" }
     $pthreadsLib = Get-ChildItem -Path $obsBuild -Recurse -Filter "w32-pthreads.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
-    $cmakeArgs += "-DCMAKE_PREFIX_PATH=$ObsDeps"
+    $cmakeArgs += "-DCMAKE_PREFIX_PATH=$($prefixList -join ';')"
     $cmakeArgs += "-DLIBOBS_INCLUDE_DIR=$ObsStudio\libobs"
     $cmakeArgs += "-DLIBOBS_LIB=$($obsLib.FullName)"
     if ($pthreadsLib) {

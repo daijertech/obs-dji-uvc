@@ -12,13 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download obs-deps
-        shell: pwsh
-        run: |
-          $url = "https://github.com/obsproject/obs-deps/releases/download/2025-08-23/windows-deps-qt6-2025-08-23-x64.zip"
-          Invoke-WebRequest $url -OutFile deps.zip
-          Expand-Archive deps.zip -DestinationPath C:\obs-deps
-
       - name: Cache obs-studio build
         uses: actions/cache@v4
         with:
@@ -27,7 +20,7 @@ jobs:
 
       - name: Build
         shell: pwsh
-        run: .\build-windows.ps1 -ObsDeps C:\obs-deps 2>&1 | Tee-Object -FilePath build-output.log
+        run: .\build-windows.ps1 2>&1 | Tee-Object -FilePath build-output.log
 
       - name: Upload build log
         if: always()
