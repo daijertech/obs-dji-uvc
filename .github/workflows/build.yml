@@ -16,9 +16,22 @@ jobs:
           Invoke-WebRequest $url -OutFile deps.zip
           Expand-Archive deps.zip -DestinationPath C:\obs-deps
 
+      - name: Cache obs-studio build
+        uses: actions/cache@v4
+        with:
+          path: obs-studio
+          key: obs-studio-32.1.2-v2
+
       - name: Build
         shell: pwsh
-        run: .\build-windows.ps1 -ObsDeps C:\obs-deps
+        run: .\build-windows.ps1 -ObsDeps C:\obs-deps 2>&1 | Tee-Object -FilePath build-output.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.log
 
       - name: Stage
         shell: pwsh

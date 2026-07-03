@@ -36,9 +36,11 @@ $obsBuild = Join-Path $ObsStudio "build"
 if (-not (Test-Path (Join-Path $obsBuild "libobs"))) {
     cmake -S $ObsStudio -B $obsBuild -G "Visual Studio 17 2022" -A x64 `
         -DCMAKE_PREFIX_PATH="$ObsDeps" `
-        -DENABLE_PLUGINS=OFF -DENABLE_UI=OFF -DENABLE_SCRIPTING=OFF `
-        -DENABLE_BROWSER=OFF -DENABLE_WEBSOCKET=OFF `
+        -DOBS_VERSION_OVERRIDE="32.1.2" `
+        -DENABLE_FRONTEND=OFF -DENABLE_UI=OFF -DENABLE_SCRIPTING=OFF `
+        -DENABLE_BROWSER=OFF `
         -DCMAKE_INSTALL_PREFIX="$obsBuild\install"
+    if ($LASTEXITCODE -ne 0) { throw "obs-studio configure failed" }
 }
 cmake --build $obsBuild --config $Config --target libobs
 if ($LASTEXITCODE -ne 0) { throw "libobs build failed" }
