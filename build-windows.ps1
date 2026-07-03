@@ -13,13 +13,23 @@ if (-not (Test-Path $ObsDeps)) {
     Write-Host "Get windows-deps-qt6-*-x64.zip from https://github.com/obsproject/obs-deps/releases"
     exit 1
 }
+# Handle zips that extract into a wrapper directory
+if (-not (Test-Path (Join-Path $ObsDeps "include"))) {
+    $inner = Get-ChildItem -Path $ObsDeps -Directory | Where-Object { Test-Path (Join-Path $_.FullName "include") } | Select-Object -First 1
+    if ($inner) { $ObsDeps = $inner.FullName; Write-Host "obs-deps resolved to $ObsDeps" }
+    else { throw "$ObsDeps does not contain include/ — wrong archive layout" }
+}
 
 if ($ObsStudio -eq "") {
     $ObsStudio = Join-Path $root "obs-studio"
 }
 if (-not (Test-Path $ObsStudio)) {
-    git clone --depth 1 https://github.com/obsproject/obs-studio.git $ObsStudio
-    git -C $ObsStudio submodule update --init --recursive --depth 1
+    # Pin to a release tag; shallow submodules break on pinned commits, so
+    # the submodule fetch is full-depth (small repos, fast).
+    git clone --depth 1 --branch 32.1.2 https://github.com/obsproject/obs-studio.git $ObsStudio
+    if ($LASTEXITCODE -ne 0) { throw "obs-studio clone failed" }
+    git -C $ObsStudio submodule update --init --recursive
+    if ($LASTEXITCODE -ne 0) { throw "obs-studio submodule init failed" }
 }
 
 $obsBuild = Join-Path $ObsStudio "build"
@@ -31,6 +41,7 @@ if (-not (Test-Path (Join-Path $obsBuild "libobs"))) {
         -DCMAKE_INSTALL_PREFIX="$obsBuild\install"
 }
 cmake --build $obsBuild --config $Config --target libobs
+if ($LASTEXITCODE -ne 0) { throw "libobs build failed" }
 
 # Try installing the cmake package; fall back to direct paths if unavailable.
 cmake --install $obsBuild --config $Config --prefix "$obsBuild\install" 2>$null | Out-Null
@@ -61,7 +72,9 @@ if ($libobsConfig) {
 }
 
 cmake @cmakeArgs
+if ($LASTEXITCODE -ne 0) { throw "plugin configure failed" }
 cmake --build $build --config $Config
+if ($LASTEXITCODE -ne 0) { throw "plugin build failed" }
 
 Write-Host ""
 Write-Host "Output: $build\$Config\obs-dji-uvc.dll"

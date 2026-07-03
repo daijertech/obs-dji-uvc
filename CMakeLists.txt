@@ -30,7 +30,7 @@ find_package(FFmpeg REQUIRED COMPONENTS avcodec avutil swscale)
 # --- libusb --------------------------------------------------------------------
 FetchContent_Declare(libusb
   GIT_REPOSITORY https://github.com/libusb/libusb-cmake.git
-  GIT_TAG v1.0.27
+  GIT_TAG v1.0.29-0
   GIT_SHALLOW TRUE)
 set(LIBUSB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LIBUSB_BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -41,10 +41,24 @@ FetchContent_MakeAvailable(libusb)
 FetchContent_Declare(libuvc_src
   GIT_REPOSITORY https://github.com/libuvc/libuvc.git
   GIT_TAG master
-  GIT_SHALLOW TRUE)
-FetchContent_GetProperties(libuvc_src)
-if(NOT libuvc_src_POPULATED)
-  FetchContent_Populate(libuvc_src)
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR cmake-disabled-no-add-subdirectory)
+FetchContent_MakeAvailable(libuvc_src)
+
+# FIX for MSVC: upstream libuvc.h includes <sys/time.h> unconditionally,
+# which does not exist under MSVC.  Patch it in the populated source.
+file(READ "${libuvc_src_SOURCE_DIR}/include/libuvc/libuvc.h" _uvc_hdr)
+string(FIND "${_uvc_hdr}" "#include <sys/time.h>" _uvc_needs_patch)
+if(NOT _uvc_needs_patch EQUAL -1)
+  string(REPLACE "#include <sys/time.h>"
+"#ifdef _MSC_VER
+#include <winsock2.h>  /* struct timeval */
+#include <time.h>      /* struct timespec */
+#else
+#include <sys/time.h>
+#endif"
+    _uvc_hdr "${_uvc_hdr}")
+  file(WRITE "${libuvc_src_SOURCE_DIR}/include/libuvc/libuvc.h" "${_uvc_hdr}")
 endif()
 
 # Generate libuvc_config.h (no JPEG — we only consume the H.264 descriptor)
@@ -76,6 +90,17 @@ target_link_libraries(uvc_vendored PUBLIC usb-1.0)
 if(MSVC)
   target_compile_definitions(uvc_vendored PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
+if(WIN32)
+  if(TARGET OBS::w32-pthreads)
+    target_link_libraries(uvc_vendored PUBLIC OBS::w32-pthreads)
+  elseif(LIBOBS_PTHREADS_LIB)
+    target_link_libraries(uvc_vendored PUBLIC ${LIBOBS_PTHREADS_LIB})
+    target_include_directories(uvc_vendored PUBLIC ${LIBOBS_PTHREADS_INCLUDE_DIR})
+  else()
+    message(FATAL_ERROR "No pthreads implementation for libuvc on Windows "
+      "(need OBS::w32-pthreads or LIBOBS_PTHREADS_LIB)")
+  endif()
+endif()
 
 # --- plugin ----------------------------------------------------------------------
 add_library(obs-dji-uvc MODULE
@@ -105,6 +130,11 @@ endif()
 
 target_link_libraries(obs-dji-uvc PRIVATE
   FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale uvc_vendored)
+
+find_path(SIMDE_INCLUDE_DIR simde/x86/sse2.h)
+if(SIMDE_INCLUDE_DIR)
+  target_include_directories(obs-dji-uvc PRIVATE ${SIMDE_INCLUDE_DIR})
+endif()
 
 if(WIN32)
   target_compile_definitions(obs-dji-uvc PRIVATE _CRT_SECURE_NO_WARNINGS)

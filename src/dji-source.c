@@ -136,7 +136,7 @@ static void on_frame(void *opaque, const struct dji_decoded *f)
 	video_format_get_parameters(VIDEO_CS_709, VIDEO_RANGE_PARTIAL,
 				    frame.color_matrix, frame.color_range_min,
 				    frame.color_range_max);
-	frame.range = VIDEO_RANGE_PARTIAL;
+	frame.full_range = false;
 
 	obs_source_output_video(s->source, &frame);
 }
