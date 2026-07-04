@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(obs-dji-uvc VERSION 1.0.1 LANGUAGES C)
+project(obs-dji-uvc VERSION 1.1.0 LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 # obs-dji-uvc — DJI Osmo Pocket encoded-UVC source for OBS Studio.
@@ -124,6 +124,11 @@ add_library(obs-dji-uvc MODULE
   src/dji-capture.c
   src/dji-decode.c
   src/dji-nal.c)
+if(WIN32)
+  target_sources(obs-dji-uvc PRIVATE src/dji-capture-mf.cpp)
+  target_link_libraries(obs-dji-uvc PRIVATE mfplat mf mfreadwrite mfuuid ole32)
+  set_property(TARGET obs-dji-uvc PROPERTY CXX_STANDARD 17)
+endif()
 
 target_compile_definitions(obs-dji-uvc PRIVATE DJI_HAVE_OBS)
 

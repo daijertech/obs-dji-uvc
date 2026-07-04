@@ -19,6 +19,9 @@
 #include <string.h>
 
 #include "dji-capture.h"
+#ifdef _WIN32
+#include "dji-capture-mf.h"
+#endif
 #include "dji-decode.h"
 #include "dji-nal.h"
 
@@ -44,6 +47,11 @@ struct dji_src {
 	/* config */
 	struct dji_device_info dev;
 	bool dev_valid;
+#ifdef _WIN32
+	struct dji_mf_device_info mf_dev;
+	bool mf_valid;
+	struct dji_mf_capture *mf_cap;
+#endif
 	int fourcc;
 	int width, height, fps;
 	enum dji_hw hw;
@@ -177,6 +185,12 @@ static void stop_stream(struct dji_src *s)
 		dji_capture_stop(s->cap);
 		s->cap = NULL;
 	}
+#ifdef _WIN32
+	if (s->mf_cap) {
+		dji_mf_stop(s->mf_cap);
+		s->mf_cap = NULL;
+	}
+#endif
 	if (s->thread_started) {
 		s->running = false;
 		os_sem_post(s->q_sem);
@@ -204,26 +218,55 @@ static void stop_stream(struct dji_src *s)
 
 static void start_stream(struct dji_src *s)
 {
-	if (!s->dev_valid)
-		return;
-
 	char err[256] = {0};
-	s->cap = dji_capture_start(&s->dev, s->fourcc, s->width, s->height,
-				   s->fps, on_payload, s, err, sizeof(err));
-	if (!s->cap) {
-		blog(LOG_WARNING, "[dji-uvc] start failed: %s", err);
-		return;
+	int fmt_fourcc = 0, fmt_w = 0, fmt_h = 0, fmt_fps = 0;
+
+#ifdef _WIN32
+	if (s->mf_valid) {
+		s->mf_cap = dji_mf_start(&s->mf_dev, s->width, s->height,
+					 s->fps, on_payload, s, err,
+					 sizeof(err));
+		if (!s->mf_cap) {
+			blog(LOG_WARNING,
+			     "[dji-uvc] windows-native start failed: %s",
+			     err);
+			return;
+		}
+		struct dji_mf_format_info mfmt;
+		dji_mf_get_format(s->mf_cap, &mfmt);
+		fmt_fourcc = mfmt.fourcc;
+		fmt_w = mfmt.width;
+		fmt_h = mfmt.height;
+		fmt_fps = mfmt.fps;
+		blog(LOG_INFO,
+		     "[dji-uvc] windows-native (no driver swap) backend");
+	} else
+#endif
+	{
+		if (!s->dev_valid)
+			return;
+		s->cap = dji_capture_start(&s->dev, s->fourcc, s->width,
+					   s->height, s->fps, on_payload, s,
+					   err, sizeof(err));
+		if (!s->cap) {
+			blog(LOG_WARNING, "[dji-uvc] start failed: %s", err);
+			return;
+		}
+		struct dji_format_info fmt;
+		dji_capture_get_format(s->cap, &fmt);
+		fmt_fourcc = fmt.fourcc;
+		fmt_w = fmt.width;
+		fmt_h = fmt.height;
+		fmt_fps = fmt.fps;
 	}
 
-	struct dji_format_info fmt;
-	dji_capture_get_format(s->cap, &fmt);
-	blog(LOG_INFO, "[dji-uvc] streaming %dx%d@%d (%s)", fmt.width,
-	     fmt.height, fmt.fps, fmt.fourcc == FCC_H265 ? "H265" : "H264");
+	blog(LOG_INFO, "[dji-uvc] streaming %dx%d@%d (%s)", fmt_w, fmt_h,
+	     fmt_fps, fmt_fourcc == FCC_H265 ? "H265" : "H264");
 
-	dji_nal_init(&s->nal, fmt.fourcc == FCC_H265 ? DJI_NAL_H265
+	dji_nal_init(&s->nal, fmt_fourcc == FCC_H265 ? DJI_NAL_H265
 						     : DJI_NAL_H264);
 
-	s->dec = dji_decoder_create(fmt.fourcc, s->hw, on_frame, s);
+	s->dec = dji_decoder_create(fmt_fourcc, s->hw, on_frame, s);
 	if (!s->dec) {
 		blog(LOG_WARNING, "[dji-uvc] decoder init failed");
 		stop_stream(s);
@@ -253,17 +296,39 @@ static void apply_settings(struct dji_src *s, obs_data_t *st)
 {
 	const char *devkey = obs_data_get_string(st, "device");
 	s->dev_valid = false;
+#ifdef _WIN32
+	s->mf_valid = false;
 
-	struct dji_device_info devs[8];
-	int n = dji_capture_enumerate(devs, 8);
-	for (int i = 0; i < n; i++) {
-		char key[192];
-		snprintf(key, sizeof(key), "%s|%s", devs[i].name,
-			 devs[i].serial);
-		if (strcmp(key, devkey) == 0 || (i == 0 && !devkey[0])) {
-			s->dev = devs[i];
-			s->dev_valid = true;
-			break;
+	/* Windows-native devices (stock driver, no Zadig) */
+	{
+		struct dji_mf_device_info mfd[8];
+		int mn = dji_mf_enumerate(mfd, 8);
+		for (int i = 0; i < mn; i++) {
+			char key[640];
+			snprintf(key, sizeof(key), "mf|%s", mfd[i].symlink);
+			if (strcmp(key, devkey) == 0 ||
+			    (i == 0 && !devkey[0])) {
+				s->mf_dev = mfd[i];
+				s->mf_valid = true;
+				break;
+			}
+		}
+	}
+	if (!s->mf_valid)
+#endif
+	{
+		struct dji_device_info devs[8];
+		int n = dji_capture_enumerate(devs, 8);
+		for (int i = 0; i < n; i++) {
+			char key[192];
+			snprintf(key, sizeof(key), "uvc|%s|%s", devs[i].name,
+				 devs[i].serial);
+			if (strcmp(key, devkey) == 0 ||
+			    (i == 0 && !devkey[0])) {
+				s->dev = devs[i];
+				s->dev_valid = true;
+				break;
+			}
 		}
 	}
 
@@ -340,20 +405,40 @@ static bool refresh_clicked(obs_properties_t *props, obs_property_t *p,
 	obs_property_t *list = obs_properties_get(props, "device");
 	obs_property_list_clear(list);
 
-	struct dji_device_info devs[8];
-	int n = dji_capture_enumerate(devs, 8);
-	for (int i = 0; i < n; i++) {
-		char key[192], label[224];
-		snprintf(key, sizeof(key), "%s|%s", devs[i].name,
-			 devs[i].serial);
-		if (devs[i].serial[0])
-			snprintf(label, sizeof(label), "%s (%s)",
-				 devs[i].name, devs[i].serial);
-		else
-			snprintf(label, sizeof(label), "%s", devs[i].name);
-		obs_property_list_add_string(list, label, key);
+	int total = 0;
+#ifdef _WIN32
+	{
+		struct dji_mf_device_info mfd[8];
+		int mn = dji_mf_enumerate(mfd, 8);
+		for (int i = 0; i < mn; i++) {
+			char key[640], label[192];
+			snprintf(key, sizeof(key), "mf|%s", mfd[i].symlink);
+			snprintf(label, sizeof(label), "%s (no driver swap)",
+				 mfd[i].name);
+			obs_property_list_add_string(list, label, key);
+			total++;
+		}
 	}
-	if (n == 0)
+#endif
+	{
+		struct dji_device_info devs[8];
+		int n = dji_capture_enumerate(devs, 8);
+		for (int i = 0; i < n; i++) {
+			char key[192], label[224];
+			snprintf(key, sizeof(key), "uvc|%s|%s", devs[i].name,
+				 devs[i].serial);
+			if (devs[i].serial[0])
+				snprintf(label, sizeof(label),
+					 "%s (WinUSB, %s)", devs[i].name,
+					 devs[i].serial);
+			else
+				snprintf(label, sizeof(label), "%s (WinUSB)",
+					 devs[i].name);
+			obs_property_list_add_string(list, label, key);
+			total++;
+		}
+	}
+	if (total == 0)
 		obs_property_list_add_string(list, T("NoDevices"), "");
 	return true;
 }
