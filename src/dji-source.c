@@ -306,12 +306,21 @@ static void apply_settings(struct dji_src *s, obs_data_t *st)
 		for (int i = 0; i < mn; i++) {
 			char key[640];
 			snprintf(key, sizeof(key), "mf|%s", mfd[i].symlink);
-			if (strcmp(key, devkey) == 0 ||
-			    (i == 0 && !devkey[0])) {
+			if (strcmp(key, devkey) == 0) {
 				s->mf_dev = mfd[i];
 				s->mf_valid = true;
 				break;
 			}
+		}
+		if (!s->mf_valid && mn > 0 &&
+		    strncmp(devkey, "uvc|", 4) != 0) {
+			/* saved key stale or empty — use first camera */
+			if (devkey[0])
+				blog(LOG_WARNING,
+				     "[dji-uvc] saved device id not found; "
+				     "using first available camera");
+			s->mf_dev = mfd[0];
+			s->mf_valid = true;
 		}
 	}
 	if (!s->mf_valid)
@@ -323,12 +332,28 @@ static void apply_settings(struct dji_src *s, obs_data_t *st)
 			char key[192];
 			snprintf(key, sizeof(key), "uvc|%s|%s", devs[i].name,
 				 devs[i].serial);
-			if (strcmp(key, devkey) == 0 ||
-			    (i == 0 && !devkey[0])) {
+			if (strcmp(key, devkey) == 0) {
 				s->dev = devs[i];
 				s->dev_valid = true;
 				break;
 			}
+		}
+		if (!s->dev_valid && n > 0) {
+			if (devkey[0])
+				blog(LOG_WARNING,
+				     "[dji-uvc] saved device id not found; "
+				     "using first available camera");
+			s->dev = devs[0];
+			s->dev_valid = true;
+		}
+		if (!s->dev_valid
+#ifdef _WIN32
+		    && !s->mf_valid
+#endif
+		) {
+			blog(LOG_WARNING,
+			     "[dji-uvc] no DJI camera found (Webcam mode? "
+			     "connected?)");
 		}
 	}
 
