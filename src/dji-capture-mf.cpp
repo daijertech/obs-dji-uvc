@@ -17,6 +17,8 @@
 #include <cstring>
 #include <thread>
 
+#include <util/base.h>
+
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mf.lib")
 #pragma comment(lib, "mfreadwrite.lib")
@@ -283,18 +285,18 @@ struct dji_mf_capture *dji_mf_start(const struct dji_mf_device_info *dev,
 				(DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
 				0, &stream, &flags, &ts, &sample);
 			if (FAILED(hr2)) {
-				fprintf(stderr,
-					"[dji-uvc] MF ReadSample failed "
-					"0x%08lx — capture stopped\n",
-					(unsigned long)hr2);
+				blog(LOG_WARNING,
+				     "[dji-uvc] MF ReadSample failed 0x%08lx "
+				     "— capture stopped (device dropped?)",
+				     (unsigned long)hr2);
 				break;
 			}
 			if (flags & (MF_SOURCE_READERF_ENDOFSTREAM |
 				     MF_SOURCE_READERF_ERROR)) {
-				fprintf(stderr,
-					"[dji-uvc] MF stream ended "
-					"(flags 0x%08lx)\n",
-					(unsigned long)flags);
+				blog(LOG_WARNING,
+				     "[dji-uvc] MF stream ended (flags "
+				     "0x%08lx)",
+				     (unsigned long)flags);
 				if (sample)
 					sample->Release();
 				break;

@@ -4,7 +4,7 @@
 ; Stage first with installer\stage.ps1 (copies DLLs into installer\staging).
 
 #define AppName "obs-dji-uvc"
-#define AppVersion "1.1.1"
+#define AppVersion "1.2.0"
 
 [Setup]
 AppId={{7B1E7A61-DDA2-4C55-9B3A-obs-dji-uvc}

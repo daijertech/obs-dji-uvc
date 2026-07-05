@@ -70,7 +70,21 @@ struct dji_src {
 	pthread_t decode_thread;
 	volatile bool running;
 	bool thread_started;
+
+	/* watchdog / auto-reconnect */
+	char devkey[640];
+	bool want_running;
+	volatile long last_payload_s;
+	volatile long last_attempt_s;
+	volatile bool restarting;
+	pthread_t restart_th;
+	bool restart_joinable;
 };
+
+static long now_s(void)
+{
+	return (long)(os_gettime_ns() / 1000000000ULL);
+}
 
 /* --- capture-thread side ------------------------------------------------ */
 
@@ -120,6 +134,7 @@ static void on_au(void *opaque, const uint8_t *au, size_t size, bool key)
 static void on_payload(void *opaque, const uint8_t *data, size_t size)
 {
 	struct dji_src *s = opaque;
+	os_atomic_set_long(&s->last_payload_s, now_s());
 	dji_nal_push(&s->nal, data, size, on_au, s);
 }
 
@@ -224,6 +239,8 @@ static void stop_stream(struct dji_src *s)
 static void start_stream(struct dji_src *s)
 {
 	char err[256] = {0};
+	os_atomic_set_long(&s->last_attempt_s, now_s());
+	os_atomic_set_long(&s->last_payload_s, now_s());
 	int fmt_fourcc = 0, fmt_w = 0, fmt_h = 0, fmt_fps = 0;
 
 #ifdef _WIN32
@@ -297,9 +314,21 @@ static const char *dji_get_name(void *unused)
 	return T("SourceName");
 }
 
+static void pick_device(struct dji_src *s);
+static void apply_stream_settings(struct dji_src *s, obs_data_t *st);
+
 static void apply_settings(struct dji_src *s, obs_data_t *st)
 {
 	const char *devkey = obs_data_get_string(st, "device");
+	snprintf(s->devkey, sizeof(s->devkey), "%s", devkey);
+	s->want_running = true;
+	apply_stream_settings(s, st);
+	pick_device(s);
+}
+
+static void pick_device(struct dji_src *s)
+{
+	const char *devkey = s->devkey;
 	s->dev_valid = false;
 #ifdef _WIN32
 	s->mf_valid = false;
@@ -362,6 +391,10 @@ static void apply_settings(struct dji_src *s, obs_data_t *st)
 		}
 	}
 
+}
+
+static void apply_stream_settings(struct dji_src *s, obs_data_t *st)
+{
 	const char *codec = obs_data_get_string(st, "codec");
 	s->fourcc = 0;
 	if (strcmp(codec, "h264") == 0)
@@ -393,9 +426,65 @@ static void apply_settings(struct dji_src *s, obs_data_t *st)
 		s->hw = DJI_HW_VIDEOTOOLBOX;
 }
 
+static void *restart_thread_fn(void *data)
+{
+	struct dji_src *s = data;
+	os_set_thread_name("dji-uvc-restart");
+	stop_stream(s);
+	pick_device(s); /* re-enumerate: survives unplug/replug */
+	start_stream(s);
+	os_atomic_set_long(&s->last_attempt_s, now_s());
+	os_atomic_set_bool(&s->restarting, false);
+	return NULL;
+}
+
+static void trigger_restart(struct dji_src *s, const char *why, long stale)
+{
+	blog(LOG_WARNING, "[dji-uvc] watchdog: %s (%lds) — restarting capture",
+	     why, stale);
+	if (s->restart_joinable) {
+		pthread_join(s->restart_th, NULL);
+		s->restart_joinable = false;
+	}
+	os_atomic_set_bool(&s->restarting, true);
+	if (pthread_create(&s->restart_th, NULL, restart_thread_fn, s) == 0)
+		s->restart_joinable = true;
+	else
+		os_atomic_set_bool(&s->restarting, false);
+}
+
+static void dji_video_tick(void *data, float seconds)
+{
+	UNUSED_PARAMETER(seconds);
+	struct dji_src *s = data;
+
+	if (!s->want_running || os_atomic_load_bool(&s->restarting))
+		return;
+
+	long now = now_s();
+	bool active = (s->cap != NULL);
+#ifdef _WIN32
+	active = active || (s->mf_cap != NULL);
+#endif
+	if (active) {
+		long stale = now - os_atomic_load_long(&s->last_payload_s);
+		if (stale >= 3)
+			trigger_restart(s, "no frames from camera", stale);
+	} else {
+		long since = now - os_atomic_load_long(&s->last_attempt_s);
+		if (since >= 5)
+			trigger_restart(s, "camera not connected, retrying",
+					since);
+	}
+}
+
 static void dji_update(void *data, obs_data_t *settings)
 {
 	struct dji_src *s = data;
+	if (s->restart_joinable) {
+		pthread_join(s->restart_th, NULL);
+		s->restart_joinable = false;
+	}
 	stop_stream(s);
 	apply_settings(s, settings);
 	start_stream(s);
@@ -418,6 +507,11 @@ static void *dji_create(obs_data_t *settings, obs_source_t *source)
 static void dji_destroy(void *data)
 {
 	struct dji_src *s = data;
+	s->want_running = false;
+	if (s->restart_joinable) {
+		pthread_join(s->restart_th, NULL);
+		s->restart_joinable = false;
+	}
 	stop_stream(s);
 	dji_nal_free(&s->nal);
 	deque_free(&s->q);
@@ -532,5 +626,6 @@ struct obs_source_info dji_uvc_source = {
 	.update = dji_update,
 	.get_defaults = dji_get_defaults,
 	.get_properties = dji_get_properties,
+	.video_tick = dji_video_tick,
 	.icon_type = OBS_ICON_TYPE_CAMERA,
 };
