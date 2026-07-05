@@ -83,6 +83,8 @@ struct dji_src {
 	char claimed[640]; /* device-claim registry key we hold, or "" */
 };
 
+#define SRC_NAME(s) obs_source_get_name((s)->source)
+
 static long now_s(void)
 {
 	return (long)(os_gettime_ns() / 1000000000ULL);
@@ -179,7 +181,7 @@ static void on_au(void *opaque, const uint8_t *au, size_t size, bool key)
 			}
 			s->q_dropping = false;
 			blog(LOG_INFO,
-			     "[dji-uvc] decode lag: dropped to keyframe");
+			     "[dji-uvc] '%s': decode lag: dropped to keyframe", SRC_NAME(s));
 		} else {
 			pthread_mutex_unlock(&s->q_lock);
 			bfree(item.data);
@@ -312,8 +314,8 @@ static void start_stream(struct dji_src *s)
 		snprintf(ckey, sizeof(ckey), "mf|%s", s->mf_dev.symlink);
 		if (!claim_device(ckey)) {
 			blog(LOG_WARNING,
-			     "[dji-uvc] camera already in use by another "
-			     "dji-uvc source — select a different camera");
+			     "[dji-uvc] '%s': camera already in use by another "
+			     "dji-uvc source — select a different camera", SRC_NAME(s));
 			return;
 		}
 		snprintf(s->claimed, sizeof(s->claimed), "%s", ckey);
@@ -322,8 +324,8 @@ static void start_stream(struct dji_src *s)
 					 sizeof(err));
 		if (!s->mf_cap) {
 			blog(LOG_WARNING,
-			     "[dji-uvc] windows-native start failed: %s",
-			     err);
+			     "[dji-uvc] '%s': windows-native start failed: %s",
+			     SRC_NAME(s), err);
 			release_device(s->claimed);
 			s->claimed[0] = 0;
 			return;
@@ -335,7 +337,7 @@ static void start_stream(struct dji_src *s)
 		fmt_h = mfmt.height;
 		fmt_fps = mfmt.fps;
 		blog(LOG_INFO,
-		     "[dji-uvc] windows-native (no driver swap) backend");
+		     "[dji-uvc] '%s': windows-native (no driver swap) backend", SRC_NAME(s));
 	} else
 #endif
 	{
@@ -346,8 +348,8 @@ static void start_stream(struct dji_src *s)
 			 s->dev.serial);
 		if (!claim_device(ckey)) {
 			blog(LOG_WARNING,
-			     "[dji-uvc] camera already in use by another "
-			     "dji-uvc source — select a different camera");
+			     "[dji-uvc] '%s': camera already in use by another "
+			     "dji-uvc source — select a different camera", SRC_NAME(s));
 			return;
 		}
 		snprintf(s->claimed, sizeof(s->claimed), "%s", ckey);
@@ -355,7 +357,7 @@ static void start_stream(struct dji_src *s)
 					   s->height, s->fps, on_payload, s,
 					   err, sizeof(err));
 		if (!s->cap) {
-			blog(LOG_WARNING, "[dji-uvc] start failed: %s", err);
+			blog(LOG_WARNING, "[dji-uvc] '%s': start failed: %s", SRC_NAME(s), err);
 			release_device(s->claimed);
 			s->claimed[0] = 0;
 			return;
@@ -368,7 +370,7 @@ static void start_stream(struct dji_src *s)
 		fmt_fps = fmt.fps;
 	}
 
-	blog(LOG_INFO, "[dji-uvc] streaming %dx%d@%d (%s)", fmt_w, fmt_h,
+	blog(LOG_INFO, "[dji-uvc] '%s': streaming %dx%d@%d (%s)", SRC_NAME(s), fmt_w, fmt_h,
 	     fmt_fps, fmt_fourcc == FCC_H265 ? "H265" : "H264");
 
 	dji_nal_init(&s->nal, fmt_fourcc == FCC_H265 ? DJI_NAL_H265
@@ -418,6 +420,7 @@ static void pick_device(struct dji_src *s)
 	s->dev_valid = false;
 #ifdef _WIN32
 	s->mf_valid = false;
+	bool mf_all_busy = false;
 
 	/* Windows-native devices (stock driver, no Zadig) */
 	{
@@ -450,9 +453,17 @@ static void pick_device(struct dji_src *s)
 				s->mf_valid = true;
 				break;
 			}
+			if (!s->mf_valid) {
+				mf_all_busy = true;
+				blog(LOG_WARNING,
+				     "[dji-uvc] '%s': %d camera%s detected "
+				     "but all in use by other dji-uvc "
+				     "sources — connect another camera",
+				     SRC_NAME(s), mn, mn == 1 ? "" : "s");
+			}
 		}
 	}
-	if (!s->mf_valid)
+	if (!s->mf_valid && !mf_all_busy)
 #endif
 	{
 		struct dji_device_info devs[8];
@@ -490,8 +501,8 @@ static void pick_device(struct dji_src *s)
 #endif
 		) {
 			blog(LOG_WARNING,
-			     "[dji-uvc] no DJI camera found (Webcam mode? "
-			     "connected?)");
+			     "[dji-uvc] '%s': no DJI camera found (Webcam mode? "
+			     "connected?)", SRC_NAME(s));
 		}
 	}
 
@@ -544,8 +555,8 @@ static void *restart_thread_fn(void *data)
 
 static void trigger_restart(struct dji_src *s, const char *why, long stale)
 {
-	blog(LOG_WARNING, "[dji-uvc] watchdog: %s (%lds) — restarting capture",
-	     why, stale);
+	blog(LOG_WARNING, "[dji-uvc] '%s': watchdog: %s (%lds) — restarting capture",
+	     SRC_NAME(s), why, stale);
 	if (s->restart_joinable) {
 		pthread_join(s->restart_th, NULL);
 		s->restart_joinable = false;
