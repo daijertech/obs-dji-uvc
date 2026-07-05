@@ -79,11 +79,72 @@ struct dji_src {
 	volatile bool restarting;
 	pthread_t restart_th;
 	bool restart_joinable;
+
+	char claimed[640]; /* device-claim registry key we hold, or "" */
 };
 
 static long now_s(void)
 {
 	return (long)(os_gettime_ns() / 1000000000ULL);
+}
+
+/* ------------------------------------------------------------------ */
+/* Device-claim registry: one physical camera per source.  Prevents    */
+/* sources preempting each other (MF error 0xC00D3EA3 ping-pong) and   */
+/* lets unconfigured sources auto-pick the first FREE camera so a      */
+/* multi-camera scene (e.g. 4x Pocket 3) works without manual setup.   */
+/* ------------------------------------------------------------------ */
+#define DJI_MAX_CLAIMS 8
+static pthread_mutex_t g_claims_lock = PTHREAD_MUTEX_INITIALIZER;
+static char g_claims[DJI_MAX_CLAIMS][640];
+
+static bool claim_device(const char *key)
+{
+	bool ok = false;
+	int free_slot = -1;
+	pthread_mutex_lock(&g_claims_lock);
+	for (int i = 0; i < DJI_MAX_CLAIMS; i++) {
+		if (g_claims[i][0] == 0) {
+			if (free_slot < 0)
+				free_slot = i;
+		} else if (strcmp(g_claims[i], key) == 0) {
+			goto out; /* already claimed by another source */
+		}
+	}
+	if (free_slot >= 0) {
+		snprintf(g_claims[free_slot], sizeof(g_claims[free_slot]),
+			 "%s", key);
+		ok = true;
+	}
+out:
+	pthread_mutex_unlock(&g_claims_lock);
+	return ok;
+}
+
+static bool device_is_claimed(const char *key)
+{
+	bool used = false;
+	pthread_mutex_lock(&g_claims_lock);
+	for (int i = 0; i < DJI_MAX_CLAIMS; i++) {
+		if (g_claims[i][0] && strcmp(g_claims[i], key) == 0) {
+			used = true;
+			break;
+		}
+	}
+	pthread_mutex_unlock(&g_claims_lock);
+	return used;
+}
+
+static void release_device(const char *key)
+{
+	if (!key[0])
+		return;
+	pthread_mutex_lock(&g_claims_lock);
+	for (int i = 0; i < DJI_MAX_CLAIMS; i++) {
+		if (strcmp(g_claims[i], key) == 0)
+			g_claims[i][0] = 0;
+	}
+	pthread_mutex_unlock(&g_claims_lock);
 }
 
 /* --- capture-thread side ------------------------------------------------ */
@@ -211,6 +272,8 @@ static void stop_stream(struct dji_src *s)
 		s->mf_cap = NULL;
 	}
 #endif
+	release_device(s->claimed);
+	s->claimed[0] = 0;
 	if (s->thread_started) {
 		s->running = false;
 		os_sem_post(s->q_sem);
@@ -245,6 +308,15 @@ static void start_stream(struct dji_src *s)
 
 #ifdef _WIN32
 	if (s->mf_valid) {
+		char ckey[700];
+		snprintf(ckey, sizeof(ckey), "mf|%s", s->mf_dev.symlink);
+		if (!claim_device(ckey)) {
+			blog(LOG_WARNING,
+			     "[dji-uvc] camera already in use by another "
+			     "dji-uvc source — select a different camera");
+			return;
+		}
+		snprintf(s->claimed, sizeof(s->claimed), "%s", ckey);
 		s->mf_cap = dji_mf_start(&s->mf_dev, s->width, s->height,
 					 s->fps, on_payload, s, err,
 					 sizeof(err));
@@ -252,6 +324,8 @@ static void start_stream(struct dji_src *s)
 			blog(LOG_WARNING,
 			     "[dji-uvc] windows-native start failed: %s",
 			     err);
+			release_device(s->claimed);
+			s->claimed[0] = 0;
 			return;
 		}
 		struct dji_mf_format_info mfmt;
@@ -267,11 +341,23 @@ static void start_stream(struct dji_src *s)
 	{
 		if (!s->dev_valid)
 			return;
+		char ckey[700];
+		snprintf(ckey, sizeof(ckey), "uvc|%s|%s", s->dev.name,
+			 s->dev.serial);
+		if (!claim_device(ckey)) {
+			blog(LOG_WARNING,
+			     "[dji-uvc] camera already in use by another "
+			     "dji-uvc source — select a different camera");
+			return;
+		}
+		snprintf(s->claimed, sizeof(s->claimed), "%s", ckey);
 		s->cap = dji_capture_start(&s->dev, s->fourcc, s->width,
 					   s->height, s->fps, on_payload, s,
 					   err, sizeof(err));
 		if (!s->cap) {
 			blog(LOG_WARNING, "[dji-uvc] start failed: %s", err);
+			release_device(s->claimed);
+			s->claimed[0] = 0;
 			return;
 		}
 		struct dji_format_info fmt;
@@ -348,13 +434,22 @@ static void pick_device(struct dji_src *s)
 		}
 		if (!s->mf_valid && mn > 0 &&
 		    strncmp(devkey, "uvc|", 4) != 0) {
-			/* saved key stale or empty — use first camera */
-			if (devkey[0])
-				blog(LOG_WARNING,
-				     "[dji-uvc] saved device id not found; "
-				     "using first available camera");
-			s->mf_dev = mfd[0];
-			s->mf_valid = true;
+			/* saved key stale or empty — use first FREE camera */
+			for (int i = 0; i < mn; i++) {
+				char key[700];
+				snprintf(key, sizeof(key), "mf|%s",
+					 mfd[i].symlink);
+				if (device_is_claimed(key))
+					continue;
+				if (devkey[0])
+					blog(LOG_WARNING,
+					     "[dji-uvc] saved device id not "
+					     "found; using free camera %d",
+					     i);
+				s->mf_dev = mfd[i];
+				s->mf_valid = true;
+				break;
+			}
 		}
 	}
 	if (!s->mf_valid)
@@ -373,12 +468,21 @@ static void pick_device(struct dji_src *s)
 			}
 		}
 		if (!s->dev_valid && n > 0) {
-			if (devkey[0])
-				blog(LOG_WARNING,
-				     "[dji-uvc] saved device id not found; "
-				     "using first available camera");
-			s->dev = devs[0];
-			s->dev_valid = true;
+			for (int i = 0; i < n; i++) {
+				char key[700];
+				snprintf(key, sizeof(key), "uvc|%s|%s",
+					 devs[i].name, devs[i].serial);
+				if (device_is_claimed(key))
+					continue;
+				if (devkey[0])
+					blog(LOG_WARNING,
+					     "[dji-uvc] saved device id not "
+					     "found; using free camera %d",
+					     i);
+				s->dev = devs[i];
+				s->dev_valid = true;
+				break;
+			}
 		}
 		if (!s->dev_valid
 #ifdef _WIN32
@@ -535,10 +639,25 @@ static bool refresh_clicked(obs_properties_t *props, obs_property_t *p,
 		struct dji_mf_device_info mfd[8];
 		int mn = dji_mf_enumerate(mfd, 8);
 		for (int i = 0; i < mn; i++) {
-			char key[640], label[192];
+			char key[640], label[192], serial[64] = {0};
+			/* symlink: \\?\usb#vid_xxxx&pid_xxxx#SERIAL#{guid}
+			 * — third '#'-separated field is the unit serial */
+			const char *a = strchr(mfd[i].symlink, '#');
+			const char *b = a ? strchr(a + 1, '#') : NULL;
+			const char *c = b ? strchr(b + 1, '#') : NULL;
+			if (b && c && (size_t)(c - b - 1) < sizeof(serial)) {
+				memcpy(serial, b + 1, (size_t)(c - b - 1));
+				serial[c - b - 1] = 0;
+			}
 			snprintf(key, sizeof(key), "mf|%s", mfd[i].symlink);
-			snprintf(label, sizeof(label), "%s (no driver swap)",
-				 mfd[i].name);
+			if (serial[0])
+				snprintf(label, sizeof(label),
+					 "%s [%s] (no driver swap)",
+					 mfd[i].name, serial);
+			else
+				snprintf(label, sizeof(label),
+					 "%s #%d (no driver swap)",
+					 mfd[i].name, i + 1);
 			obs_property_list_add_string(list, label, key);
 			total++;
 		}
