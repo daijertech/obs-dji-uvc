@@ -91,15 +91,20 @@ static void on_au(void *opaque, const uint8_t *au, size_t size, bool key)
 		s->q_dropping = true;
 	if (s->q_dropping) {
 		if (key) {
-			/* resync: flush queue, start clean at this keyframe */
+			/* resync: flush queue, start clean at this keyframe.
+			 * Do NOT consume semaphore posts here — blocking on
+			 * the semaphore while holding q_lock deadlocks
+			 * against the decode thread.  Spurious wakeups are
+			 * handled by the decoder's q_count check. */
 			while (s->q_count) {
 				struct au_item old;
 				deque_pop_front(&s->q, &old, sizeof(old));
 				bfree(old.data);
 				s->q_count--;
-				os_sem_wait(s->q_sem); /* consume its post */
 			}
 			s->q_dropping = false;
+			blog(LOG_INFO,
+			     "[dji-uvc] decode lag: dropped to keyframe");
 		} else {
 			pthread_mutex_unlock(&s->q_lock);
 			bfree(item.data);
