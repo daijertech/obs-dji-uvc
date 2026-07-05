@@ -1,0 +1,135 @@
+MSBuild version 17.14.40+3e7442088 for .NET Framework
+
+  libobs-version.vcxproj -> D:\a\obs-dji-uvc\obs-dji-uvc\obs-studio\build\libobs\libobs-version.dir\RelWithDebInfo\libobs-version.lib
+  caption.vcxproj -> D:\a\obs-dji-uvc\obs-dji-uvc\obs-studio\build\deps\libcaption\RelWithDebInfo\caption.lib
+  w32-pthreads.vcxproj -> D:\a\obs-dji-uvc\obs-dji-uvc\obs-studio\build\deps\w32-pthreads\RelWithDebInfo\w32-pthreads.dll
+  Copy w32-pthreads to destination
+  libobs.vcxproj -> D:\a\obs-dji-uvc\obs-dji-uvc\obs-studio\build\libobs\RelWithDebInfo\obs.dll
+  Copy libobs to destination
+  Copy libobs resources to data directory
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.20348.
+-- The C compiler identification is MSVC 19.44.35228.0
+-- The CXX compiler identification is MSVC 19.44.35228.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found FFmpeg: D:/a/obs-dji-uvc/obs-dji-uvc/obs-studio/.deps/obs-deps-2025-08-23-x64/bin/avcodec-61.dll;D:/a/obs-dji-uvc/obs-dji-uvc/obs-studio/.deps/obs-deps-2025-08-23-x64/bin/avutil-59.dll;D:/a/obs-dji-uvc/obs-dji-uvc/obs-studio/.deps/obs-deps-2025-08-23-x64/bin/swscale-8.dll (found version "7.1") found components: avcodec avutil swscale
+-- Looking for clock_gettime
+-- Looking for clock_gettime - not found
+-- Looking for pthread_condattr_setclock
+-- Looking for pthread_condattr_setclock - not found
+-- Looking for pthread_setname_np
+-- Looking for pthread_setname_np - not found
+-- Looking for pthread_threadid_np
+-- Looking for pthread_threadid_np - not found
+-- Looking for eventfd
+-- Looking for eventfd - not found
+-- Looking for pipe2
+-- Looking for pipe2 - not found
+-- Looking for syslog
+-- Looking for syslog - not found
+-- Looking for include file asm/types.h
+-- Looking for include file asm/types.h - not found
+-- Looking for include file string.h
+-- Looking for include file string.h - found
+-- Looking for include file sys/time.h
+-- Looking for include file sys/time.h - not found
+-- Looking for timerfd_create
+-- Looking for timerfd_create - not found
+-- Looking for nfds_t
+-- Looking for nfds_t - not found
+-- Performing Test HAVE_STRUCT_TIMESPEC
+-- Performing Test HAVE_STRUCT_TIMESPEC - Success
+-- Configuring done (21.1s)
+-- Generating done (0.0s)
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    CMAKE_BUILD_TYPE
+
+
+-- Build files have been written to: D:/a/obs-dji-uvc/obs-dji-uvc/build
+MSBuild version 17.14.40+3e7442088 for .NET Framework
+
+  1>Checking Build System
+  Building Custom Rule D:/a/obs-dji-uvc/obs-dji-uvc/build/_deps/libusb-src/CMakeLists.txt
+  core.c
+  descriptor.c
+  hotplug.c
+  io.c
+  strerror.c
+  sync.c
+  events_windows.c
+  threads_windows.c
+  windows_common.c
+  windows_usbdk.c
+  windows_winusb.c
+  Generating Code...
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libusb-src\libusb\libusb\os\windows_winusb.c(2131,62): warning C5287: operands are different enum types 'libusb_endpoint_direction' and 'libusb_request_type'; use an explicit cast to silence this warning [D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libusb-build\usb-1.0.vcxproj]
+  usb-1.0.vcxproj -> D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libusb-build\RelWithDebInfo\libusb-1.0.lib
+  Building Custom Rule D:/a/obs-dji-uvc/obs-dji-uvc/CMakeLists.txt
+  ctrl.c
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\include\libuvc\libuvc_internal.h(75,9): warning C4005: 'ARRAYSIZE': macro redefinition [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  (compiling source file '_deps/libuvc_src-src/src/ctrl.c')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\winnt.h(1429,9):
+      see previous definition of 'ARRAYSIZE'
+  
+  ctrl-gen.c
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\include\libuvc\libuvc_internal.h(75,9): warning C4005: 'ARRAYSIZE': macro redefinition [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  (compiling source file '_deps/libuvc_src-src/src/ctrl-gen.c')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\winnt.h(1429,9):
+      see previous definition of 'ARRAYSIZE'
+  
+  device.c
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\include\libuvc\libuvc_internal.h(75,9): warning C4005: 'ARRAYSIZE': macro redefinition [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  (compiling source file '_deps/libuvc_src-src/src/device.c')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\winnt.h(1429,9):
+      see previous definition of 'ARRAYSIZE'
+  
+  diag.c
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\include\libuvc\libuvc_internal.h(75,9): warning C4005: 'ARRAYSIZE': macro redefinition [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  (compiling source file '_deps/libuvc_src-src/src/diag.c')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\winnt.h(1429,9):
+      see previous definition of 'ARRAYSIZE'
+  
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\src\diag.c(184,17): warning C4129: '%': unrecognized character escape sequence [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\src\diag.c(307,20): warning C4129: '%': unrecognized character escape sequence [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  frame.c
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\include\libuvc\libuvc_internal.h(75,9): warning C4005: 'ARRAYSIZE': macro redefinition [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  (compiling source file '_deps/libuvc_src-src/src/frame.c')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\winnt.h(1429,9):
+      see previous definition of 'ARRAYSIZE'
+  
+  init.c
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\include\libuvc\libuvc_internal.h(75,9): warning C4005: 'ARRAYSIZE': macro redefinition [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  (compiling source file '_deps/libuvc_src-src/src/init.c')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\winnt.h(1429,9):
+      see previous definition of 'ARRAYSIZE'
+  
+  misc.c
+  stream.c
+D:\a\obs-dji-uvc\obs-dji-uvc\build\_deps\libuvc_src-src\include\libuvc\libuvc_internal.h(75,9): warning C4005: 'ARRAYSIZE': macro redefinition [D:\a\obs-dji-uvc\obs-dji-uvc\build\uvc_vendored.vcxproj]
+  (compiling source file '_deps/libuvc_src-src/src/stream.c')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\winnt.h(1429,9):
+      see previous definition of 'ARRAYSIZE'
+  
+  Generating Code...
+  uvc_vendored.vcxproj -> D:\a\obs-dji-uvc\obs-dji-uvc\build\RelWithDebInfo\uvc_vendored.lib
+  Building Custom Rule D:/a/obs-dji-uvc/obs-dji-uvc/CMakeLists.txt
+  plugin-main.c
+  dji-source.c
+  dji-capture.c
+  dji-decode.c
+  dji-nal.c
+  Generating Code...
+  dji-capture-mf.cpp
+     Creating library D:/a/obs-dji-uvc/obs-dji-uvc/build/RelWithDebInfo/obs-dji-uvc.lib and object D:/a/obs-dji-uvc/obs-dji-uvc/build/RelWithDebInfo/obs-dji-uvc.exp
+  obs-dji-uvc.vcxproj -> D:\a\obs-dji-uvc\obs-dji-uvc\build\RelWithDebInfo\obs-dji-uvc.dll
+  Building Custom Rule D:/a/obs-dji-uvc/obs-dji-uvc/CMakeLists.txt
